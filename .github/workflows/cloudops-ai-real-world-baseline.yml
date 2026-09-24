@@ -1,0 +1,235 @@
+name: CloudOps AI - Real World Docker Baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+
+  baseline:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ------------------------------------------------------
+      # CHECKOUT
+      # ------------------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------
+      # ENVIRONMENT INFORMATION
+      # ------------------------------------------------------
+
+      - name: Capture environment
+        run: |
+          mkdir -p cloudops_ai_telemetry
+
+          echo "=== SYSTEM ===" \
+            > cloudops_ai_telemetry/environment.txt
+
+          uname -a \
+            >> cloudops_ai_telemetry/environment.txt
+
+          echo "" \
+            >> cloudops_ai_telemetry/environment.txt
+
+          echo "=== CPU ===" \
+            >> cloudops_ai_telemetry/environment.txt
+
+          lscpu \
+            >> cloudops_ai_telemetry/environment.txt
+
+          echo "" \
+            >> cloudops_ai_telemetry/environment.txt
+
+          echo "=== MEMORY ===" \
+            >> cloudops_ai_telemetry/environment.txt
+
+          free -h \
+            >> cloudops_ai_telemetry/environment.txt
+
+          echo "" \
+            >> cloudops_ai_telemetry/environment.txt
+
+          echo "=== DISK ===" \
+            >> cloudops_ai_telemetry/environment.txt
+
+          df -h \
+            >> cloudops_ai_telemetry/environment.txt
+
+
+      # ------------------------------------------------------
+      # DOCKER VERSION
+      # ------------------------------------------------------
+
+      - name: Capture Docker environment
+        run: |
+          docker version \
+            > cloudops_ai_telemetry/docker_version.txt 2>&1
+
+          docker info \
+            > cloudops_ai_telemetry/docker_info.txt 2>&1
+
+          docker compose version \
+            > cloudops_ai_telemetry/docker_compose_version.txt 2>&1
+
+
+      # ------------------------------------------------------
+      # START APPLICATION
+      # ------------------------------------------------------
+
+      - name: Start Docker Compose stack
+        run: |
+          docker-compose up -d
+
+          sleep 15
+
+
+      # ------------------------------------------------------
+      # INITIAL CONTAINER STATE
+      # ------------------------------------------------------
+
+      - name: Capture initial Docker state
+        run: |
+          docker ps -a \
+            > cloudops_ai_telemetry/docker_ps_initial.txt
+
+          docker images \
+            > cloudops_ai_telemetry/docker_images_initial.txt
+
+          docker network ls \
+            > cloudops_ai_telemetry/docker_networks.txt
+
+
+      # ------------------------------------------------------
+      # CONTAINER INSPECTION
+      # ------------------------------------------------------
+
+      - name: Capture container inspection
+        run: |
+          mkdir -p cloudops_ai_telemetry/inspect
+
+          for container in $(docker ps -aq); do
+
+            docker inspect "$container" \
+              > "cloudops_ai_telemetry/inspect/${container}.json" \
+              2>&1
+
+          done
+
+
+      # ------------------------------------------------------
+      # DOCKER STATS
+      # ------------------------------------------------------
+
+      - name: Capture Docker statistics
+        run: |
+          docker stats --no-stream \
+            > cloudops_ai_telemetry/docker_stats.txt 2>&1
+
+
+      # ------------------------------------------------------
+      # CONTAINER LOGS
+      # ------------------------------------------------------
+
+      - name: Capture container logs
+        run: |
+          mkdir -p cloudops_ai_telemetry/logs
+
+          for container in $(docker ps -aq); do
+
+            name=$(docker inspect \
+              --format='{{.Name}}' \
+              "$container" \
+              | sed 's#^/##')
+
+            docker logs "$container" \
+              > "cloudops_ai_telemetry/logs/${name}.log" \
+              2>&1 || true
+
+          done
+
+
+      # ------------------------------------------------------
+      # DOCKER EVENTS
+      # ------------------------------------------------------
+
+      - name: Capture Docker events
+        run: |
+          timeout 5 docker events \
+            --since 30s \
+            > cloudops_ai_telemetry/docker_events.txt \
+            2>&1 || true
+
+
+      # ------------------------------------------------------
+      # APPLICATION TEST
+      # ------------------------------------------------------
+
+      - name: Test application
+        run: |
+          docker run \
+            --network container:webapp-frontend \
+            appropriate/curl \
+            -s \
+            --retry 10 \
+            --retry-connrefused \
+            http://localhost:5000/ \
+            > cloudops_ai_telemetry/application_test.txt
+
+
+      # ------------------------------------------------------
+      # FINAL STATE
+      # ------------------------------------------------------
+
+      - name: Capture final Docker state
+        if: always()
+        run: |
+
+          docker ps -a \
+            > cloudops_ai_telemetry/docker_ps_final.txt \
+            2>&1 || true
+
+          docker stats --no-stream \
+            > cloudops_ai_telemetry/docker_stats_final.txt \
+            2>&1 || true
+
+          docker compose ps \
+            > cloudops_ai_telemetry/compose_ps.txt \
+            2>&1 || true
+
+          docker compose logs \
+            > cloudops_ai_telemetry/compose_logs.txt \
+            2>&1 || true
+
+
+      # ------------------------------------------------------
+      # SAVE COMPOSE CONFIG
+      # ------------------------------------------------------
+
+      - name: Save resolved Compose configuration
+        if: always()
+        run: |
+
+          docker-compose config \
+            > cloudops_ai_telemetry/compose_config.txt \
+            2>&1 || true
+
+
+      # ------------------------------------------------------
+      # UPLOAD TELEMETRY
+      # ------------------------------------------------------
+
+      - name: Upload Docker telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+
+        with:
+          name: cloudops-ai-docker-baseline
+          path: cloudops_ai_telemetry/
+          retention-days: 30
