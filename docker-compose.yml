@@ -5,6 +5,7 @@ services:
     build: .
     ports:
       - "5000:5000"
+    command: ["sh", "-c", "echo CLOUDOPS_AI_STARTUP_FAILURE; exit 1"]
   redis:
     container_name: redis-backend
     image: "redis:alpine"
