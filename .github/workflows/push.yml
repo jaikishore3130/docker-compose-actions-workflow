@@ -107,7 +107,7 @@ jobs:
           date -u +"%Y-%m-%dT%H:%M:%SZ" \
             > cloudops_ai_telemetry/stack_start_time.txt
 
-          docker-compose up -d \
+          docker compose up -d \
             2>&1 | tee \
             cloudops_ai_telemetry/compose_up.log
 
